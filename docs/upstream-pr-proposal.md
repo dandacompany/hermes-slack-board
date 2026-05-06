@@ -2,30 +2,29 @@
 
 ## Summary
 
-Hermes already has a strong Kanban system and a Slack Socket Mode gateway. The missing piece is a clean way for Hermes plugins to register Slack-native interactive UI: slash command ACK handlers, Block Kit action handlers, and modal view handlers.
+Hermes already has a Slack Socket Mode gateway and a general plugin system. The missing piece is a clean way for Hermes plugins to register Slack-native Block Kit UI: slash command ACK handlers, interactive action handlers, and modal view handlers.
 
-This proposal recommends adding a small Slack extension registry to Hermes core. The first consumer would be the `/board` Kanban UI, but the extension point is intentionally generic so other plugins can build Slack-native workflows without patching `gateway/platforms/slack.py`.
+This proposal recommends adding a small Slack extension registry to Hermes core. The extension point is intentionally generic so plugins can build Slack-native workflows without patching `gateway/platforms/slack.py`.
 
 ## User Problem
 
-The current `/kanban` command is functional, but Slack users need a visual control-plane surface for:
+Text slash commands are useful, but they are not enough for Slack-native plugin workflows that need:
 
-- seeing task status without opening the dashboard;
-- creating tasks from Slack;
-- moving tasks across Kanban states;
-- opening task detail modals;
-- approving or requesting changes when a worker blocks on human input;
-- reviewing run history, comments, events, and worker failure context.
+- buttons and selects that mutate state;
+- modals for structured input;
+- filtered dashboards or detail panels;
+- approval and review actions;
+- message updates after a user acts.
 
 A plain text slash command cannot provide this. A Slack Block Kit UI can.
 
 ## Current Constraint
 
-Hermes plugins can register session slash commands with `ctx.register_command(...)`. That is sufficient for text commands in CLI/gateway sessions, but not for a Slack-native Block Kit workflow.
+Hermes plugins can register session slash commands with `ctx.register_command(...)`. That is sufficient for text commands in CLI/gateway sessions, but not for Slack-native Block Kit workflows.
 
-The Slack board requires:
+Slack Block Kit workflows require:
 
-- immediate `ack()` for `/board` to avoid Slack timeout UX;
+- immediate `ack()` for native slash commands to avoid Slack timeout UX;
 - background `chat.postMessage` / `chat.update` rendering;
 - `app.action(...)` handlers for `action_id` payloads;
 - `app.view(...)` handlers for modal submissions;
@@ -122,17 +121,17 @@ Keep the first upstream PR small and generic:
   - rejects or warns on collisions.
 - Update plugin documentation.
 
-The full Kanban `/board` UI can be a second PR or bundled plugin once the extension point is accepted.
+Concrete Slack UIs can follow as later PRs or plugins once the extension point is accepted.
 
-## Why Not Just Add `/board` Directly?
+## Why Not Add a Concrete UI Directly?
 
-Adding `/board` directly to Hermes core would solve Kanban, but it would not solve the broader extension problem. Other Slack-native workflows would still need to patch `slack.py`.
+Adding one concrete Slack UI directly to Hermes core would not solve the broader extension problem. Other Slack-native workflows would still need to patch `slack.py`.
 
-The extension hook is a small general primitive. The board UI becomes the proof that the primitive is useful.
+The extension hook is a small general primitive. Concrete UIs become consumers of that primitive.
 
 ## Reference Implementation
 
-This repository contains a working version-pinned implementation:
+This repository contains a working version-pinned reference implementation of one Slack Block Kit workflow:
 
 - `overlays/gateway/platforms/slack_kanban_board.py`: Kanban-specific rendering and mutation helpers.
 - `overlays/gateway/platforms/slack_board_methods.pyfrag`: current direct Slack adapter methods.
@@ -152,7 +151,7 @@ Draft upstream PR:
 
 - https://github.com/NousResearch/hermes-agent/pull/20936
 
-The PR intentionally proposes only the generic Slack extension hook. The Kanban `/board` UI should follow as a second PR or as a plugin after the hook is accepted.
+The PR intentionally proposes only the generic Slack extension hook. Concrete Block Kit UIs should follow as later PRs or plugins after the hook is accepted.
 
 ## Acceptance Criteria for `/board`
 
