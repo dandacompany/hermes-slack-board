@@ -91,7 +91,7 @@ Show only tasks that appear to need human approval:
 Filter by project namespace:
 
 ```text
-/board --tenant youtube
+/board --tenant acme
 ```
 
 ## Status Semantics
@@ -130,4 +130,9 @@ Restart the gateway after uninstalling.
 
 ## Phase 2 Direction
 
-The target second phase is an upstreamable Hermes Slack UI extension point, so this board can become a normal installable plugin instead of a direct adapter patch. See [docs/research-phase-2.md](docs/research-phase-2.md).
+The target second phase is an upstreamable Hermes Slack UI extension point, so this board can become a normal installable plugin instead of a direct adapter patch.
+
+- Research notes: [docs/research-phase-2.md](docs/research-phase-2.md)
+- Maintainer-facing proposal: [docs/upstream-pr-proposal.md](docs/upstream-pr-proposal.md)
+- Draft upstream PR description: [docs/pr-description.md](docs/pr-description.md)
+- Generalization audit: [docs/generalization-audit.md](docs/generalization-audit.md)

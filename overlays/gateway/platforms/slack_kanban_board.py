@@ -28,14 +28,6 @@ STATUS_LABELS = {
     "blocked": "Blocked",
     "done": "Done",
 }
-STATUS_EMOJI = {
-    "triage": ":mag:",
-    "todo": ":ballot_box_with_check:",
-    "ready": ":large_green_circle:",
-    "running": ":large_blue_circle:",
-    "blocked": ":no_entry:",
-    "done": ":white_check_mark:",
-}
 SYSTEM_DEFAULT_RESULTS = {
     "Completed from Slack /board.",
     "Completed from Slack /board",
@@ -72,7 +64,7 @@ def parse_board_args(rest: str) -> BoardFilters:
     """Parse `/board` args.
 
     Supported forms are intentionally small and deterministic:
-    `/board --board youtube --tenant content --assignee writer --status ready`.
+    `/board --board product-launch --tenant acme --assignee writer --status ready`.
     """
     filters = BoardFilters()
     try:

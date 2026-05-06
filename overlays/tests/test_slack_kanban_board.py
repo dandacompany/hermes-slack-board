@@ -30,13 +30,13 @@ from hermes_cli import kanban_db as kb
 
 def test_parse_board_args_filters():
     filters = parse_board_args(
-        "--board launch --status ready --assignee writer --tenant content --limit 5 --archived"
+        "--board launch --status ready --assignee writer --tenant acme --limit 5 --archived"
     )
 
     assert filters.board == "launch"
     assert filters.status == "ready"
     assert filters.assignee == "writer"
-    assert filters.tenant == "content"
+    assert filters.tenant == "acme"
     assert filters.limit == 5
     assert filters.include_archived is True
     approval = parse_board_args("--status blocked --approval-required --page 2 --limit 10")
@@ -48,7 +48,7 @@ def test_parse_board_args_filters():
 
 
 def test_action_value_round_trip():
-    filters = BoardFilters(board="launch", status="blocked", tenant="content")
+    filters = BoardFilters(board="launch", status="blocked", tenant="acme")
     value = action_value("unblock", "t_abc123", filters)
 
     action, task_id, parsed = parse_action_value(value)
@@ -57,7 +57,7 @@ def test_action_value_round_trip():
     assert task_id == "t_abc123"
     assert parsed.board == "launch"
     assert parsed.status == "blocked"
-    assert parsed.tenant == "content"
+    assert parsed.tenant == "acme"
 
     move_value = move_action_value("t_abc123", "done", filters)
     task_id, target_status, move_filters = parse_move_action_value(move_value)
@@ -87,7 +87,7 @@ def test_build_board_blocks_and_apply_actions(tmp_path, monkeypatch):
             body="Render the Kanban cards with Block Kit.",
             assignee="manager",
             tenant="test",
-            created_by="U07JD5290BZ",
+            created_by="U123EXAMPLE",
         )
         kb.create_task(
             conn,
@@ -222,7 +222,7 @@ def test_build_board_blocks_and_apply_actions(tmp_path, monkeypatch):
         for field in block.get("fields", [])
     )
     assert any(
-        "<@U07JD5290BZ>" in field.get("text", "")
+        "<@U123EXAMPLE>" in field.get("text", "")
         for block in detail_blocks
         for field in block.get("fields", [])
     )
@@ -254,20 +254,20 @@ def test_create_task_for_status(tmp_path, monkeypatch):
         title="Draft new task",
         body="Created from Slack modal.",
         assignee="Manager",
-        tenant="content",
+        tenant="acme",
         priority=2,
-        filters=BoardFilters(tenant="content"),
+        filters=BoardFilters(tenant="acme"),
         created_by="test",
     )
 
-    assert filters.tenant == "content"
+    assert filters.tenant == "acme"
     with kb.connect() as conn:
         task = kb.get_task(conn, task_id)
 
     assert task is not None
     assert task.status == "todo"
     assert task.assignee == "manager"
-    assert task.tenant == "content"
+    assert task.tenant == "acme"
     assert task.priority == 2
 
 
@@ -280,11 +280,11 @@ def test_update_task_fields_from_detail_modal(tmp_path, monkeypatch):
             title="Original",
             body="Old body",
             assignee="manager",
-            tenant="content",
+            tenant="acme",
         )
         assert kb.block_task(conn, task_id, reason="Needs edit")
 
-    values = task_edit_values(task_id, BoardFilters(tenant="content"))
+    values = task_edit_values(task_id, BoardFilters(tenant="acme"))
     assert values is not None
     assert values["title"] == "Original"
     assert values["status"] == "blocked"
@@ -296,7 +296,7 @@ def test_update_task_fields_from_detail_modal(tmp_path, monkeypatch):
         body="Updated description",
         assignee="Default",
         tenant="ops",
-        filters=BoardFilters(tenant="content"),
+        filters=BoardFilters(tenant="acme"),
     )
 
     assert "Updated" in notice
@@ -546,14 +546,14 @@ def test_project_options(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_KANBAN_DB", str(tmp_path / "kanban.db"))
     kb.init_db()
     with kb.connect() as conn:
-        kb.create_task(conn, title="Content task", tenant="content")
+        kb.create_task(conn, title="Content task", tenant="acme")
         kb.create_task(conn, title="Finance task", tenant="finance")
 
-    options = project_options(BoardFilters(tenant="content"))
+    options = project_options(BoardFilters(tenant="acme"))
     values = [option.get("value") for option in options]
 
     assert values[0] == "__none__"
-    assert "content" in values
+    assert "acme" in values
     assert "finance" in values
     assert all(len(value) <= 150 for value in values)
 
@@ -562,25 +562,25 @@ def test_create_task_with_dependencies(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_KANBAN_DB", str(tmp_path / "kanban.db"))
     kb.init_db()
     with kb.connect() as conn:
-        parent = kb.create_task(conn, title="Parent research", tenant="content")
+        parent = kb.create_task(conn, title="Parent research", tenant="acme")
 
     child, filters = create_task_for_status(
         status="ready",
         title="Child writeup",
-        tenant="content",
+        tenant="acme",
         parents=[parent],
-        filters=BoardFilters(tenant="content"),
+        filters=BoardFilters(tenant="acme"),
         created_by="test",
     )
 
-    assert filters.tenant == "content"
+    assert filters.tenant == "acme"
     with kb.connect() as conn:
         task = kb.get_task(conn, child)
         assert task is not None
         assert task.status == "todo"
         assert kb.parent_ids(conn, child) == [parent]
 
-    options = dependency_options(BoardFilters(tenant="content"))
+    options = dependency_options(BoardFilters(tenant="acme"))
     assert any(option.get("value") == parent for option in options)
     assert all(len(option.get("value", "")) < 151 for option in options)
 

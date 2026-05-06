@@ -50,6 +50,22 @@ def run(cmd: list[str], cwd: Path) -> None:
     subprocess.run(cmd, cwd=cwd, check=True)
 
 
+def git_dirty_files(cwd: Path) -> list[str]:
+    if not (cwd / ".git").exists():
+        return []
+    result = subprocess.run(
+        ["git", "status", "--porcelain", "--", "gateway/platforms/slack.py"],
+        cwd=cwd,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
 def backup_file(path: Path, backup_root: Path, hermes_root: Path) -> None:
     if not path.exists():
         return
@@ -121,6 +137,11 @@ def main() -> int:
         help="Hermes Agent checkout root. Defaults to ~/.hermes/hermes-agent",
     )
     parser.add_argument("--skip-tests", action="store_true", help="Skip pytest after install.")
+    parser.add_argument(
+        "--skip-git-check",
+        action="store_true",
+        help="Do not warn when gateway/platforms/slack.py has local changes.",
+    )
     args = parser.parse_args()
 
     hermes_root = Path(args.hermes_root).expanduser().resolve()
@@ -128,6 +149,14 @@ def main() -> int:
     if not slack_py.exists():
         print(f"error: {slack_py} does not exist", file=sys.stderr)
         return 2
+
+    if not args.skip_git_check:
+        dirty = git_dirty_files(hermes_root)
+        if dirty:
+            print("warning: gateway/platforms/slack.py has local changes:")
+            for line in dirty:
+                print(f"  {line}")
+            print("The installer will back it up before patching. Use --skip-git-check to hide this warning.")
 
     stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_root = Path.home() / ".hermes/backups" / f"hermes-slack-board-{stamp}"
@@ -139,9 +168,9 @@ def main() -> int:
         backup_file(hermes_root / rel, backup_root, hermes_root)
     print(f"backup: {backup_root}")
 
+    warnings = patch_slack_py(slack_py)
     copy_overlay("gateway/platforms/slack_kanban_board.py", "gateway/platforms/slack_kanban_board.py", hermes_root)
     copy_overlay("tests/test_slack_kanban_board.py", "tests/test_slack_kanban_board.py", hermes_root)
-    warnings = patch_slack_py(slack_py)
 
     python = hermes_root / "venv/bin/python"
     if not python.exists():
