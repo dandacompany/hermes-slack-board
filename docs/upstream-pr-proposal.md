@@ -146,6 +146,14 @@ The reference implementation has already surfaced practical constraints:
 - Drag-and-drop is not available in Slack Block Kit; movement needs buttons/selects/modals.
 - Approval tasks need a human-in-the-loop UI, not only a status label.
 
+## Draft PR
+
+Draft upstream PR:
+
+- https://github.com/NousResearch/hermes-agent/pull/20936
+
+The PR intentionally proposes only the generic Slack extension hook. The Kanban `/board` UI should follow as a second PR or as a plugin after the hook is accepted.
+
 ## Acceptance Criteria for `/board`
 
 When implemented through the extension hook:
