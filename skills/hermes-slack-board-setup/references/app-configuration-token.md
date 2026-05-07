@@ -42,7 +42,7 @@ Configuration tokens are workspace/user scoped and expire. Use them soon after g
 Slack App Configuration Token을 발급했습니다.
 
 목표:
-  Hermes Manager Slack App에 /board slash command와 Slack Block Kit interactivity를 설정해 주세요.
+  <BOARD_SLACK_APP_NAME> Slack App에 /board slash command와 Slack Block Kit interactivity를 설정해 주세요.
 
 입력값:
   app_id: <SLACK_APP_ID>
@@ -61,4 +61,3 @@ Slack App Configuration Token을 발급했습니다.
 주의:
   token 원문을 답변에 출력하지 말고, 실패하면 Slack API error와 manifest pointer만 요약해 주세요.
 ```
-

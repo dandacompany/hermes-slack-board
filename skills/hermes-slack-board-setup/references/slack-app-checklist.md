@@ -10,7 +10,7 @@ Interactivity & Shortcuts: On
 Slash Commands: /board
 Request URL: HTTPS placeholder or existing gateway URL
 Reinstall to Workspace: after every scope, event, or command change
-Channel invite: /invite @Hermes Manager
+Channel invite: /invite @<BOARD_APP_NAME>
 ```
 
 ## Bot Token Scopes
@@ -44,4 +44,3 @@ Approve changed scopes
 Invite the app to target channels
 Copy tokens into the server environment
 ```
-
