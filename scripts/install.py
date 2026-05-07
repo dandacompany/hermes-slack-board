@@ -117,12 +117,17 @@ def patch_slack_py(slack_py: Path) -> list[str]:
             raise RuntimeError("Could not find Socket Mode start marker.")
         text = text.replace(marker, BOARD_ACTION_SNIPPET + marker, 1)
 
-    if "async def send_kanban_board" not in text:
-        methods = (ROOT / "overlays/gateway/platforms/slack_board_methods.pyfrag").read_text()
-        marker = "    async def _handle_slash_confirm_action"
-        if marker not in text:
-            raise RuntimeError("Could not find slash confirm handler insertion marker.")
-        text = text.replace(marker, methods.rstrip() + "\n\n" + marker, 1)
+    methods = (ROOT / "overlays/gateway/platforms/slack_board_methods.pyfrag").read_text().rstrip()
+    methods_start = "    async def send_kanban_board"
+    methods_end = "    async def _handle_slash_confirm_action"
+    if methods_end not in text:
+        raise RuntimeError("Could not find slash confirm handler insertion marker.")
+    if methods_start in text:
+        start = text.index(methods_start)
+        end = text.index(methods_end, start)
+        text = text[:start] + methods + "\n\n" + text[end:]
+    else:
+        text = text.replace(methods_end, methods + "\n\n" + methods_end, 1)
 
     slack_py.write_text(text)
     return warnings

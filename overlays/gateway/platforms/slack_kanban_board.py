@@ -8,6 +8,7 @@ small control-plane actions from Slack.
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import time
 from dataclasses import asdict, dataclass
@@ -46,6 +47,7 @@ PRIORITY_CHOICES = (
     (2, "High"),
     (3, "Critical"),
 )
+PRIORITY_LABELS = dict(PRIORITY_CHOICES)
 
 
 @dataclass
@@ -54,10 +56,69 @@ class BoardFilters:
     status: str | None = None
     assignee: str | None = None
     tenant: str | None = None
+    query: str | None = None
     approval_only: bool = False
     include_archived: bool = False
     limit: int = 5
     page: int = 0
+
+
+@dataclass
+class BoardCommand:
+    filters: BoardFilters
+    action: str = "view"
+    render: str = "ui"
+    text_detail: str = "list"
+    task_id: str | None = None
+    title: str | None = None
+    public: bool = False
+    natural_request: str | None = None
+
+
+TASK_ID_RE = re.compile(r"\bt_[A-Za-z0-9_-]+\b")
+STATUS_ALIASES = {
+    "all": None,
+    "triage": "triage",
+    "inbox": "triage",
+    "분류": "triage",
+    "todo": "todo",
+    "to-do": "todo",
+    "할일": "todo",
+    "할 일": "todo",
+    "ready": "ready",
+    "준비": "ready",
+    "대기": "ready",
+    "running": "running",
+    "run": "running",
+    "in-progress": "running",
+    "in_progress": "running",
+    "progress": "running",
+    "진행": "running",
+    "진행중": "running",
+    "진행 중": "running",
+    "blocked": "blocked",
+    "block": "blocked",
+    "막힘": "blocked",
+    "차단": "blocked",
+    "done": "done",
+    "complete": "done",
+    "completed": "done",
+    "완료": "done",
+}
+
+
+def _normalize_status(value: str | None) -> str | None:
+    if value is None:
+        return None
+    key = str(value).strip().lower()
+    return STATUS_ALIASES.get(key, key if key in kb.VALID_STATUSES else None)
+
+
+def _consume_value(parts: list[str], idx: int) -> tuple[str | None, int]:
+    nxt = parts[idx + 1] if idx + 1 < len(parts) else None
+    if nxt and not nxt.startswith("-"):
+        return nxt, idx + 2
+    return None, idx + 1
 
 
 def parse_board_args(rest: str) -> BoardFilters:
@@ -66,59 +127,195 @@ def parse_board_args(rest: str) -> BoardFilters:
     Supported forms are intentionally small and deterministic:
     `/board --board product-launch --tenant acme --assignee writer --status ready`.
     """
+    return parse_board_command(rest).filters
+
+
+def parse_board_command(rest: str) -> BoardCommand:
+    """Parse `/board` args into a board command.
+
+    Explicit flags are deterministic. Remaining non-option text is kept as a
+    natural request and mapped with lightweight Korean/English aliases.
+    """
     filters = BoardFilters()
+    command = BoardCommand(filters=filters)
     try:
         parts = shlex.split(rest or "")
     except ValueError:
-        return filters
+        command.natural_request = (rest or "").strip() or None
+        return _apply_natural_board_request(command)
 
     idx = 0
+    natural_parts: list[str] = []
     while idx < len(parts):
         part = parts[idx]
-        nxt = parts[idx + 1] if idx + 1 < len(parts) else None
-        if part == "--archived":
+        if part in {"-h", "--help"}:
+            command.action = "help"
+            command.render = "text"
+            idx += 1
+            continue
+        if part in {"--archived"}:
             filters.include_archived = True
             idx += 1
             continue
-        if part in {"--approval", "--approvals", "--approval-required"}:
+        if part in {"-a", "--approval", "--approvals", "--approval-required"}:
             filters.approval_only = True
             idx += 1
             continue
-        if part == "--board" and nxt:
-            filters.board = nxt
-            idx += 2
+        if part in {"-b", "--board"}:
+            value, idx = _consume_value(parts, idx)
+            if value:
+                filters.board = value
             continue
-        if part == "--status" and nxt:
-            filters.status = nxt if nxt != "all" else None
-            idx += 2
+        if part in {"-s", "--status"}:
+            value, idx = _consume_value(parts, idx)
+            filters.status = _normalize_status(value)
             continue
-        if part == "--assignee" and nxt:
-            filters.assignee = nxt
-            idx += 2
+        if part in {"-u", "--assignee"}:
+            value, idx = _consume_value(parts, idx)
+            if value:
+                filters.assignee = value
             continue
-        if part == "--tenant" and nxt:
-            filters.tenant = nxt
-            idx += 2
+        if part in {"-p", "--project", "--tenant"}:
+            value, idx = _consume_value(parts, idx)
+            if value:
+                filters.tenant = value
             continue
-        if part == "--limit" and nxt:
+        if part in {"-q", "--query", "--search"}:
+            value, idx = _consume_value(parts, idx)
+            if value:
+                filters.query = value
+            continue
+        if part in {"-l", "--limit"}:
+            value, idx = _consume_value(parts, idx)
             try:
-                filters.limit = max(1, min(10, int(nxt)))
-            except ValueError:
+                filters.limit = max(1, min(10, int(value or "")))
+            except (TypeError, ValueError):
                 pass
-            idx += 2
             continue
-        if part == "--page" and nxt:
+        if part == "--page":
+            value, idx = _consume_value(parts, idx)
             try:
-                filters.page = max(0, int(nxt) - 1)
-            except ValueError:
+                filters.page = max(0, int(value or "") - 1)
+            except (TypeError, ValueError):
                 pass
-            idx += 2
             continue
+        if part in {"-t", "--text", "--plain"}:
+            command.render = "text"
+            idx += 1
+            continue
+        if part == "--summary":
+            command.render = "text"
+            command.text_detail = "summary"
+            idx += 1
+            continue
+        if part == "--full":
+            command.render = "text"
+            command.text_detail = "full"
+            idx += 1
+            continue
+        if part == "--public":
+            command.public = True
+            idx += 1
+            continue
+        if part == "--ephemeral":
+            command.public = False
+            idx += 1
+            continue
+        if part in {"-n", "--new"}:
+            command.action = "new"
+            value, idx = _consume_value(parts, idx)
+            if value:
+                command.title = value
+            continue
+        if part in {"-e", "--edit"}:
+            command.action = "edit"
+            value, idx = _consume_value(parts, idx)
+            if value:
+                command.task_id = value
+            continue
+        if part in {"-d", "--delete", "--archive"}:
+            command.action = "delete"
+            value, idx = _consume_value(parts, idx)
+            if value:
+                command.task_id = value
+            continue
+        if part in {"--detail", "--show", "-i"}:
+            command.action = "detail"
+            value, idx = _consume_value(parts, idx)
+            if value:
+                command.task_id = value
+            continue
+        natural_parts.append(part)
         idx += 1
 
     if filters.status and filters.status not in kb.VALID_STATUSES:
         filters.status = None
-    return filters
+    if natural_parts:
+        command.natural_request = " ".join(natural_parts).strip() or None
+        command = _apply_natural_board_request(command)
+    return command
+
+
+def _extract_task_id(text: str) -> str | None:
+    match = TASK_ID_RE.search(text or "")
+    return match.group(0) if match else None
+
+
+def _strip_task_id(text: str) -> str:
+    return TASK_ID_RE.sub("", text or "").strip(" ,:·")
+
+
+def _apply_natural_board_request(command: BoardCommand) -> BoardCommand:
+    text = (command.natural_request or "").strip()
+    if not text:
+        return command
+    lowered = text.lower()
+
+    task_id = _extract_task_id(text)
+    if task_id and not command.task_id:
+        command.task_id = task_id
+
+    if any(word in lowered for word in ("텍스트", "text", "plain", "목록", "보고")):
+        command.render = "text"
+    if any(word in lowered for word in ("요약", "summary", "brief")):
+        command.render = "text"
+        command.text_detail = "summary"
+    if any(word in lowered for word in ("상세 보고", "full report", "full")):
+        command.render = "text"
+        command.text_detail = "full"
+    if any(word in lowered for word in ("승인", "approval", "approve")):
+        command.filters.approval_only = True
+
+    for alias, status in STATUS_ALIASES.items():
+        if status and alias and alias in lowered:
+            command.filters.status = status
+            break
+
+    project_match = re.search(r"([A-Za-z0-9_.가-힣-]+)\s*프로젝트", text, re.I)
+    if not project_match:
+        project_match = re.search(r"(?:project|프로젝트)\s*[:=]?\s*([A-Za-z0-9_.가-힣-]+)", text, re.I)
+    if project_match and not command.filters.tenant:
+        command.filters.tenant = project_match.group(1)
+
+    query_match = re.search(r"(?:query|search|검색)\s*[:=]?\s*(.+)$", text, re.I)
+    if query_match and not command.filters.query:
+        command.filters.query = query_match.group(1).strip()
+
+    if any(word in lowered for word in ("추가", "생성", "등록", "new", "create", "add")):
+        command.action = "new"
+        if not command.title:
+            title = _strip_task_id(text)
+            title = re.sub(r"\b(new|create|add)\b", "", title, flags=re.I)
+            title = re.sub(r"(추가|생성|등록)(해줘|하기|해|)$", "", title).strip(" ,:·")
+            command.title = title or None
+    elif any(word in lowered for word in ("삭제", "아카이브", "archive", "delete")):
+        command.action = "delete"
+    elif any(word in lowered for word in ("수정", "edit", "change")):
+        command.action = "edit"
+    elif task_id and any(word in lowered for word in ("상세", "detail", "show", "보기")):
+        command.action = "detail"
+
+    return command
 
 
 def filters_from_value(value: str | None) -> BoardFilters:
@@ -132,12 +329,13 @@ def filters_from_value(value: str | None) -> BoardFilters:
         data = data.get("filters") or {}
     if not isinstance(data, dict):
         return BoardFilters()
-    if any(key in data for key in ("b", "f", "a", "n", "q", "r", "l", "p")):
+    if any(key in data for key in ("b", "f", "a", "n", "x", "q", "r", "l", "p")):
         data = {
             "board": data.get("b") or data.get("board") or None,
             "status": data.get("f") or data.get("status") or None,
             "assignee": data.get("a") or data.get("assignee") or None,
             "tenant": data.get("n") or data.get("tenant") or None,
+            "query": data.get("x") or data.get("query") or None,
             "approval_only": bool(data.get("q", data.get("approval_only", False))),
             "include_archived": bool(data.get("r", data.get("include_archived", False))),
             "limit": data.get("l") or data.get("limit") or 5,
@@ -148,6 +346,7 @@ def filters_from_value(value: str | None) -> BoardFilters:
         status=data.get("status") or None,
         assignee=data.get("assignee") or None,
         tenant=data.get("tenant") or None,
+        query=data.get("query") or None,
         approval_only=bool(data.get("approval_only", False)),
         include_archived=bool(data.get("include_archived", False)),
         limit=max(1, min(10, int(data.get("limit") or 5))),
@@ -165,6 +364,7 @@ def compact_filters_dict(filters: BoardFilters, **overrides: Any) -> dict[str, A
     status = overrides.get("status", filters.status)
     assignee = overrides.get("assignee", filters.assignee)
     tenant = overrides.get("tenant", filters.tenant)
+    query = overrides.get("query", filters.query)
     approval_only = overrides.get("approval_only", filters.approval_only)
     include_archived = overrides.get("include_archived", filters.include_archived)
     limit = int(overrides.get("limit", filters.limit) or 5)
@@ -177,6 +377,8 @@ def compact_filters_dict(filters: BoardFilters, **overrides: Any) -> dict[str, A
         data["a"] = assignee
     if tenant:
         data["n"] = tenant
+    if query:
+        data["x"] = query
     if approval_only:
         data["q"] = 1
     if include_archived:
@@ -220,6 +422,8 @@ def move_action_value(task_id: str, target_status: str, filters: BoardFilters) -
         payload["a"] = filters.assignee
     if filters.tenant:
         payload["n"] = filters.tenant
+    if filters.query:
+        payload["x"] = filters.query
     if filters.approval_only:
         payload["q"] = 1
     if filters.include_archived:
@@ -293,6 +497,7 @@ def parse_move_action_value(value: str | None) -> tuple[str, str, BoardFilters]:
             "status": data.get("f") or None,
             "assignee": data.get("a") or None,
             "tenant": data.get("n") or None,
+            "query": data.get("x") or None,
             "approval_only": bool(data.get("q", False)),
             "include_archived": bool(data.get("r", False)),
             "limit": data.get("l") or 5,
@@ -641,6 +846,7 @@ def approve_task_and_continue(
         status=filters.status,
         assignee=filters.assignee,
         tenant=filters.tenant,
+        query=filters.query,
         approval_only=filters.approval_only,
         include_archived=filters.include_archived,
         limit=filters.limit,
@@ -823,13 +1029,22 @@ def _load_tasks(filters: BoardFilters) -> list[kb.Task]:
     board = _current_board(filters)
     kb.init_db(board=board)
     with kb.connect(board=board) as conn:
-        return kb.list_tasks(
+        tasks = kb.list_tasks(
             conn,
             assignee=filters.assignee,
             status=filters.status,
             tenant=filters.tenant,
             include_archived=filters.include_archived,
         )
+    query = (filters.query or "").strip().lower()
+    if query:
+        tasks = [
+            task for task in tasks
+            if query in (task.title or "").lower()
+            or query in (task.body or "").lower()
+            or query in (task.id or "").lower()
+        ]
+    return tasks
 
 
 def build_board_blocks(filters: BoardFilters) -> tuple[str, list[dict[str, Any]]]:
@@ -855,6 +1070,8 @@ def build_board_blocks(filters: BoardFilters) -> tuple[str, list[dict[str, Any]]
         filter_bits.append(f"assignee `{_mrkdwn(filters.assignee)}`")
     if filters.tenant:
         filter_bits.append(f"project `{_mrkdwn(filters.tenant)}`")
+    if filters.query:
+        filter_bits.append(f"query `{_mrkdwn(filters.query)}`")
     if filters.approval_only:
         filter_bits.append("approval required")
     if filters.include_archived:
@@ -1034,6 +1251,116 @@ def build_board_blocks(filters: BoardFilters) -> tuple[str, list[dict[str, Any]]
     return (f"Hermes Kanban Board: {board} ({total} visible tasks)", blocks)
 
 
+def build_board_text(filters: BoardFilters, *, detail: str = "list") -> str:
+    """Return a plain-text Slack report for `/board --text`."""
+    board = _current_board(filters)
+    tasks = _load_tasks(filters)
+    approval_ids = _approval_task_ids(tasks, filters)
+    if filters.approval_only:
+        tasks = [task for task in tasks if task.id in approval_ids]
+
+    grouped: dict[str, list[kb.Task]] = {status: [] for status in STATUS_ORDER}
+    for task in tasks:
+        if task.status == "archived" and not filters.include_archived:
+            continue
+        grouped.setdefault(task.status, []).append(task)
+
+    total = sum(len(items) for items in grouped.values())
+    filters_line = [f"board: {board}"]
+    if filters.tenant:
+        filters_line.append(f"project: {filters.tenant}")
+    if filters.status:
+        filters_line.append(f"status: {filters.status}")
+    if filters.assignee:
+        filters_line.append(f"assignee: {filters.assignee}")
+    if filters.query:
+        filters_line.append(f"query: {filters.query}")
+    if filters.approval_only:
+        filters_line.append("approval: required")
+
+    lines = [
+        "*Hermes Kanban Board*",
+        " · ".join(filters_line),
+        f"visible tasks: {total}",
+    ]
+    if detail == "summary":
+        lines.append("")
+        for status in STATUS_ORDER:
+            count = len(grouped.get(status, []))
+            if count or not filters.status:
+                lines.append(f"- {STATUS_LABELS.get(status, status)}: {count}")
+        if approval_ids:
+            lines.append(f"- Approval required: {len(approval_ids)}")
+        return "\n".join(lines)
+
+    max_items = max(1, min(20 if detail == "full" else 10, int(filters.limit or 5)))
+    for status in STATUS_ORDER:
+        items = grouped.get(status, [])
+        if filters.status and status != filters.status:
+            continue
+        lines.append("")
+        lines.append(f"*{STATUS_LABELS.get(status, status)}* `{len(items)}`")
+        if not items:
+            lines.append("- No tasks")
+            continue
+        page_start = max(0, int(filters.page or 0)) * max_items
+        visible = items[page_start: page_start + max_items]
+        for idx, task in enumerate(visible, start=page_start + 1):
+            approval = " · Approval required" if task.id in approval_ids else ""
+            lines.append(f"{idx}. `{task.id}` {task.title}{approval}")
+            lines.append(f"   assignee: {task.assignee or 'Default profile'}")
+            if task.tenant:
+                lines.append(f"   project: {task.tenant}")
+            lines.append(f"   priority: {PRIORITY_LABELS.get(task.priority, str(task.priority))}")
+            if detail == "full" and task.body:
+                lines.append(f"   description: {_first_line(task.body)[:240]}")
+        if len(items) > page_start + max_items:
+            lines.append(f"   ... {len(items) - page_start - max_items} more")
+    return "\n".join(lines)
+
+
+def build_board_help_text() -> str:
+    """Return `/board` slash command help text."""
+    return """*Hermes Kanban /board*
+
+*Open board*
+`/board`
+`/board --help`
+`/board -h`
+`/board -p youtube -s ready`
+`/board -a`
+
+*Text report*
+`/board -t`
+`/board -t --summary`
+`/board -t --full`
+
+*Task actions*
+`/board -n`
+`/board -n "AI 뉴스기사 수집" -p youtube -s todo`
+`/board -e t_425b5e75`
+`/board --detail t_425b5e75`
+`/board -d t_425b5e75`
+
+*Search and filters*
+`-p, --project` project filter
+`-s, --status` status filter
+`-a, --approval` approval-required tasks
+`-q, --query` search title, description, or task id
+`-u, --assignee` assignee/profile filter
+`-l, --limit` max cards/items
+`-h, --help` show this help
+`--page` page number
+`--archived` include archived tasks
+
+*Natural requests*
+`/board youtube 프로젝트 ready 텍스트로 보여줘`
+`/board bright data 조사 추가`
+`/board t_425b5e75 상세 보기`
+`/board 승인 필요한 일만 요약`
+"""
+
+
 def apply_task_action(action: str, task_id: str, filters: BoardFilters) -> str:
     board = _current_board(filters)
     kb.init_db(board=board)
@@ -1171,6 +1498,7 @@ def create_task_for_status(
         status=filters.status,
         assignee=filters.assignee,
         tenant=filters.tenant,
+        query=filters.query,
         approval_only=filters.approval_only,
         include_archived=filters.include_archived,
         limit=filters.limit,
@@ -1264,6 +1592,7 @@ def update_task_fields(
         status=filters.status,
         assignee=filters.assignee,
         tenant=filters.tenant,
+        query=filters.query,
         approval_only=filters.approval_only,
         include_archived=filters.include_archived,
         limit=filters.limit,

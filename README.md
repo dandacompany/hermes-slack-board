@@ -26,12 +26,53 @@ This is not yet a pure Hermes plugin because Hermes plugins can register general
 
 ## Install
 
-Clone or copy this project onto the server that runs Hermes:
+For most users, run the install wizard on the server that runs Hermes:
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/dandacompany/hermes-slack-board/main/scripts/install-remote.sh | bash
+```
+
+The wizard auto-detects common Hermes checkout locations, shows the detected path, and asks for confirmation before patching.
+
+If you prefer to inspect the installer before running it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dandacompany/hermes-slack-board/main/scripts/install-remote.sh -o /tmp/install-hermes-slack-board.sh
+less /tmp/install-hermes-slack-board.sh
+bash /tmp/install-hermes-slack-board.sh
+```
+
+If Hermes is installed in a custom location, pass the path:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dandacompany/hermes-slack-board/main/scripts/install-remote.sh | bash -s -- --hermes-root /opt/hermes-agent
+```
+
+Or use an environment variable:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dandacompany/hermes-slack-board/main/scripts/install-remote.sh | HERMES_AGENT_DIR=/opt/hermes-agent bash
+```
+
+Developers can also clone or copy this project onto the server:
+
+```bash
+git clone https://github.com/dandacompany/hermes-slack-board.git
 cd hermes-slack-board
 ./scripts/install.sh ~/.hermes/hermes-agent
 ```
+
+## Guided Setup Skill
+
+This repository also includes a Hermes setup guide skill:
+
+```bash
+mkdir -p ~/.hermes/skills/hermes-slack-board-setup
+cp -R skills/hermes-slack-board-setup/* ~/.hermes/skills/hermes-slack-board-setup/
+hermes skills check
+```
+
+Use it when you want Hermes to walk through `/board` installation, Slack App setup, App Configuration Token automation, command options, and smoke tests step by step.
 
 The installer:
 
@@ -73,25 +114,87 @@ Open the default board:
 
 ```text
 /board
+/board --help
+/board -h
 ```
 
-Open a single status with more cards and pagination:
+Filter by project, status, approval, search query, and card limit:
 
 ```text
-/board --status ready --limit 10
-/board --status running --page 2
+/board -p youtube
+/board --project youtube
+/board -s ready
+/board --status ready
+/board -a
+/board --approval
+/board -q "bright data"
+/board -l 10
+/board --assignee manager
+/board --page 2
+/board --archived
 ```
 
-Show only tasks that appear to need human approval:
+Options can be combined:
 
 ```text
-/board --approval-required
+/board -p youtube -s ready -a
+/board --project youtube --status blocked --approval
 ```
 
-Filter by project namespace:
+Open a text report instead of the Block Kit board:
 
 ```text
-/board --tenant acme
+/board -t
+/board --text
+/board -t --summary
+/board -t --full
+/board -t -p youtube -s blocked
+/board -t --public
+```
+
+Create, edit, inspect, or archive a task from the slash command:
+
+```text
+/board -n
+/board --new "AI news scrape" -p youtube -s todo
+/board -e t_425b5e75
+/board --edit t_425b5e75
+/board --detail t_425b5e75
+/board -d t_425b5e75
+/board --delete t_425b5e75
+```
+
+`--delete` opens the task detail modal so the user can confirm with the Archive button.
+
+The command also accepts simple natural-language requests:
+
+```text
+/board youtube 프로젝트 ready 텍스트로 보여줘
+/board bright data 조사 추가
+/board t_425b5e75 상세 보기
+/board 승인 필요한 일만 요약
+```
+
+Supported option aliases:
+
+| Long option | Short | Purpose |
+| --- | --- | --- |
+| `--project` | `-p` | Project filter. Legacy `--tenant` still works. |
+| `--status` | `-s` | Status filter. |
+| `--approval` | `-a` | Show approval-required tasks. Legacy `--approval-required` still works. |
+| `--limit` | `-l` | Max cards/items per status. |
+| `--query` | `-q` | Search title, description, or task id. |
+| `--assignee` | `-u` | Assignee/profile filter. |
+| `--page` |  | Page number for long status lists. |
+| `--archived` |  | Include archived tasks. |
+| `--text` | `-t` | Return a plain text report. |
+| `--summary` |  | Text mode summary. |
+| `--full` |  | Text mode with descriptions. |
+| `--public` |  | Post text report to the channel. Text mode is ephemeral by default. |
+| `--new` | `-n` | Open the new task modal, optionally with a title. |
+| `--edit` | `-e` | Open the editable task detail modal. |
+| `--delete` | `-d` | Open task detail for archive confirmation. |
+| `--help` | `-h` | Show command help. |
 ```
 
 ## Status Semantics

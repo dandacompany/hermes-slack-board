@@ -9,6 +9,8 @@ from gateway.platforms.slack_kanban_board import (
     approve_task_and_continue,
     apply_task_action,
     build_board_blocks,
+    build_board_help_text,
+    build_board_text,
     create_task_for_status,
     dependency_options,
     move_action_value,
@@ -16,6 +18,7 @@ from gateway.platforms.slack_kanban_board import (
     parse_add_action_value,
     parse_action_value,
     parse_board_args,
+    parse_board_command,
     parse_move_action_value,
     project_options,
     request_task_changes,
@@ -45,6 +48,50 @@ def test_parse_board_args_filters():
     assert approval.page == 1
     assert approval.limit == 10
     assert parse_board_args("--limit 12").limit == 10
+
+
+def test_parse_board_command_short_options_and_actions():
+    command = parse_board_command("-p youtube -s ready -a -l 9 -t --summary")
+    assert command.filters.tenant == "youtube"
+    assert command.filters.status == "ready"
+    assert command.filters.approval_only is True
+    assert command.filters.limit == 9
+    assert command.render == "text"
+    assert command.text_detail == "summary"
+
+    new_command = parse_board_command('-n "AI news scrape" -p youtube -s todo')
+    assert new_command.action == "new"
+    assert new_command.title == "AI news scrape"
+    assert new_command.filters.tenant == "youtube"
+    assert new_command.filters.status == "todo"
+
+    edit_command = parse_board_command("-e t_abc123")
+    assert edit_command.action == "edit"
+    assert edit_command.task_id == "t_abc123"
+
+    delete_command = parse_board_command("--delete t_abc123")
+    assert delete_command.action == "delete"
+    assert delete_command.task_id == "t_abc123"
+
+
+def test_parse_board_command_natural_request():
+    report = parse_board_command("youtube 프로젝트 ready 텍스트로 보여줘")
+    assert report.render == "text"
+    assert report.filters.tenant == "youtube"
+    assert report.filters.status == "ready"
+
+    new_task = parse_board_command("bright data 조사 추가")
+    assert new_task.action == "new"
+    assert "bright data" in (new_task.title or "")
+
+    detail = parse_board_command("t_abc123 상세 보기")
+    assert detail.action == "detail"
+    assert detail.task_id == "t_abc123"
+
+    help_command = parse_board_command("--help")
+    assert help_command.action == "help"
+    assert help_command.render == "text"
+    assert "/board -t --summary" in build_board_help_text()
 
 
 def test_action_value_round_trip():
@@ -111,8 +158,12 @@ def test_build_board_blocks_and_apply_actions(tmp_path, monkeypatch):
         )
 
     fallback, blocks = build_board_blocks(BoardFilters(tenant="test", limit=3))
+    text_report = build_board_text(BoardFilters(tenant="test", query="Slack", limit=3))
 
     assert "Hermes Kanban Board" in fallback
+    assert "Build Slack board" in text_report
+    assert "Unassigned card" not in text_report
+    assert "project: test" in text_report
     assert len(blocks) <= 50
     assert sum(1 for block in blocks if block.get("type") == "divider") >= 2
     assert any(

@@ -5,8 +5,11 @@
 
         try:
             from gateway.platforms.slack_kanban_board import (
+                build_board_help_text,
+                build_board_text,
                 build_board_blocks,
-                parse_board_args,
+                parse_board_command,
+                task_detail_blocks,
             )
 
             text = (event.text or "").strip()
@@ -14,7 +17,80 @@
                 text = text.lstrip("/")
             if text.startswith("board"):
                 text = text[len("board"):].lstrip()
-            filters = parse_board_args(text)
+            board_command = parse_board_command(text)
+            filters = board_command.filters
+
+            if board_command.action == "help":
+                help_text = build_board_help_text()
+                if event.source.user_id:
+                    await self._get_client(event.source.chat_id).chat_postEphemeral(
+                        channel=event.source.chat_id,
+                        user=event.source.user_id,
+                        text=help_text,
+                        mrkdwn=True,
+                    )
+                else:
+                    await self._get_client(event.source.chat_id).chat_postMessage(
+                        channel=event.source.chat_id,
+                        text=help_text,
+                        mrkdwn=True,
+                    )
+                return "Board help posted."
+
+            if board_command.action in {"new", "edit", "detail", "delete"}:
+                trigger_id = (event.raw_message or {}).get("trigger_id")
+                if not trigger_id:
+                    return "This board action needs a fresh Slack trigger. Run the command again from Slack."
+                metadata = {
+                    "filters": json.loads(json.dumps(filters.__dict__, ensure_ascii=False)),
+                    "channel_id": event.source.chat_id,
+                    "message_ts": "",
+                    "defaults": {
+                        "title": board_command.title or "",
+                        "status": filters.status or "todo",
+                    },
+                }
+                if board_command.action == "new":
+                    status = filters.status if filters.status in {"triage", "todo", "ready"} else "todo"
+                    await self._get_client(event.source.chat_id).views_open(
+                        trigger_id=trigger_id,
+                        view=self._build_board_create_view(status, filters, metadata),
+                    )
+                    return "Task form opened."
+
+                task_id = board_command.task_id or ""
+                if not task_id:
+                    return "Add a task id. Example: `/board -e t_abc123`"
+                metadata["task_id"] = task_id
+                detail_blocks = task_detail_blocks(task_id, filters)
+                await self._get_client(event.source.chat_id).views_open(
+                    trigger_id=trigger_id,
+                    view=self._build_board_detail_view(task_id, detail_blocks, metadata),
+                )
+                if board_command.action == "delete":
+                    return "Task detail opened. Use Archive to confirm deletion."
+                return "Task detail opened."
+
+            if board_command.render == "text":
+                report = build_board_text(filters, detail=board_command.text_detail)
+                if board_command.public or not event.source.user_id:
+                    result = await self._get_client(event.source.chat_id).chat_postMessage(
+                        channel=event.source.chat_id,
+                        text=report,
+                        mrkdwn=True,
+                    )
+                    msg_ts = result.get("ts")
+                    if msg_ts:
+                        self._bot_message_ts.add(msg_ts)
+                    return "Board report posted."
+                await self._get_client(event.source.chat_id).chat_postEphemeral(
+                    channel=event.source.chat_id,
+                    user=event.source.user_id,
+                    text=report,
+                    mrkdwn=True,
+                )
+                return "Board report posted."
+
             fallback, blocks = build_board_blocks(filters)
             thread_ts = self._resolve_thread_ts(None, {"thread_id": event.source.thread_id} if event.source.thread_id else None)
             kwargs: Dict[str, Any] = {
@@ -782,6 +858,7 @@
     def _build_board_create_view(self, status: str, filters, metadata: dict) -> dict:
         from gateway.platforms.slack_kanban_board import CREATE_TASK_STATUSES, STATUS_LABELS
 
+        defaults = metadata.get("defaults") or {}
         if status not in CREATE_TASK_STATUSES:
             status = "todo"
         status_options = [
@@ -829,6 +906,7 @@
                         "type": "plain_text_input",
                         "action_id": "value",
                         "placeholder": {"type": "plain_text", "text": "Task title"},
+                        **({"initial_value": str(defaults.get("title") or "")[:3000]} if defaults.get("title") else {}),
                     },
                     "label": {"type": "plain_text", "text": "Title"},
                 },
@@ -841,6 +919,7 @@
                         "action_id": "value",
                         "multiline": True,
                         "placeholder": {"type": "plain_text", "text": "Notes, acceptance criteria, or context"},
+                        **({"initial_value": str(defaults.get("body") or "")[:3000]} if defaults.get("body") else {}),
                     },
                     "label": {"type": "plain_text", "text": "Body"},
                 },
