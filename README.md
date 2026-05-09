@@ -18,11 +18,19 @@ This package adds a native Slack `/board` command that renders Hermes Kanban tas
 
 Tested against:
 
-- Hermes Agent v0.12.0, 2026.4.30 release line.
+- Hermes Agent v0.12.0 (2026.4.30) and v0.13.0 (2026.5.7).
 - Python 3.11.
 - Slack Bolt Socket Mode.
 
+### Note on Hermes v0.13.0
+
+v0.13.0 ships a baseline `gateway/platforms/slack_kanban_board.py` upstream (~924 lines), but it does not yet wire `/board` as a Slack slash command and does not expose extension hooks for Slack Bolt action/view handlers. This package replaces the upstream module with an extended version (~1,927 lines) that adds: short-option and natural-language parsing, status pagination, approval filter and approve/request-changes flow, task creation modal with dependencies and project options, edit modal, dependency/project selectors, debug detail blocks, and richer help/text output. The original upstream file is backed up under `~/.hermes/backups/hermes-slack-board-*` before replacement.
+
 This is not yet a pure Hermes plugin because Hermes plugins can register general slash commands, but the current public plugin surface does not expose Slack Bolt Block Kit action/view registration hooks. The installer patches the Slack adapter directly and creates a backup.
+
+### Roadmap
+
+Once the upstream extension hooks API ([NousResearch/hermes-agent#20936](https://github.com/NousResearch/hermes-agent/pull/20936)) is merged, this project will be re-released as a pure Hermes plugin (no core patches), and the installer will become a thin compatibility shim.
 
 ## Install
 
@@ -177,25 +185,24 @@ The command also accepts simple natural-language requests:
 
 Supported option aliases:
 
-| Long option | Short | Purpose |
-| --- | --- | --- |
-| `--project` | `-p` | Project filter. Legacy `--tenant` still works. |
-| `--status` | `-s` | Status filter. |
-| `--approval` | `-a` | Show approval-required tasks. Legacy `--approval-required` still works. |
-| `--limit` | `-l` | Max cards/items per status. |
-| `--query` | `-q` | Search title, description, or task id. |
-| `--assignee` | `-u` | Assignee/profile filter. |
-| `--page` |  | Page number for long status lists. |
-| `--archived` |  | Include archived tasks. |
-| `--text` | `-t` | Return a plain text report. |
-| `--summary` |  | Text mode summary. |
-| `--full` |  | Text mode with descriptions. |
-| `--public` |  | Post text report to the channel. Text mode is ephemeral by default. |
-| `--new` | `-n` | Open the new task modal, optionally with a title. |
-| `--edit` | `-e` | Open the editable task detail modal. |
-| `--delete` | `-d` | Open task detail for archive confirmation. |
-| `--help` | `-h` | Show command help. |
-```
+| Long option  | Short | Purpose                                                                 |
+| ------------ | ----- | ----------------------------------------------------------------------- |
+| `--project`  | `-p`  | Project filter. Legacy `--tenant` still works.                          |
+| `--status`   | `-s`  | Status filter.                                                          |
+| `--approval` | `-a`  | Show approval-required tasks. Legacy `--approval-required` still works. |
+| `--limit`    | `-l`  | Max cards/items per status.                                             |
+| `--query`    | `-q`  | Search title, description, or task id.                                  |
+| `--assignee` | `-u`  | Assignee/profile filter.                                                |
+| `--page`     |       | Page number for long status lists.                                      |
+| `--archived` |       | Include archived tasks.                                                 |
+| `--text`     | `-t`  | Return a plain text report.                                             |
+| `--summary`  |       | Text mode summary.                                                      |
+| `--full`     |       | Text mode with descriptions.                                            |
+| `--public`   |       | Post text report to the channel. Text mode is ephemeral by default.     |
+| `--new`      | `-n`  | Open the new task modal, optionally with a title.                       |
+| `--edit`     | `-e`  | Open the editable task detail modal.                                    |
+| `--delete`   | `-d`  | Open task detail for archive confirmation.                              |
+| `--help`     | `-h`  | Show command help.                                                      |
 
 ## Status Semantics
 

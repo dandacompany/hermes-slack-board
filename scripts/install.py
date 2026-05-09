@@ -13,6 +13,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+SUPPORTED_VERSIONS = ("0.12.0", "0.13.0")
+
+
+def detect_hermes_version(hermes_root: Path) -> str | None:
+    pyproject = hermes_root / "pyproject.toml"
+    if not pyproject.exists():
+        return None
+    for line in pyproject.read_text().splitlines():
+        stripped = line.strip()
+        if stripped.startswith("version") and "=" in stripped:
+            return stripped.split("=", 1)[1].strip().strip('"').strip("'")
+    return None
+
 
 BOARD_COMMAND_SNIPPET = '''\
             @self._app.command("/board")
@@ -154,6 +167,17 @@ def main() -> int:
     if not slack_py.exists():
         print(f"error: {slack_py} does not exist", file=sys.stderr)
         return 2
+
+    detected = detect_hermes_version(hermes_root)
+    if detected:
+        print(f"detected Hermes Agent version: {detected}")
+        if detected not in SUPPORTED_VERSIONS:
+            print(
+                f"warning: this installer was tested against {', '.join(SUPPORTED_VERSIONS)}; "
+                f"{detected} may have shifted slack.py markers."
+            )
+    else:
+        print("warning: could not detect Hermes Agent version (pyproject.toml missing)")
 
     if not args.skip_git_check:
         dirty = git_dirty_files(hermes_root)
