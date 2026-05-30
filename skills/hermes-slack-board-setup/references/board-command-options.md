@@ -44,16 +44,15 @@ Text reports are ephemeral by default. Use `--public` to post to the channel.
 
 ## Option Table
 
-| Long option | Short | Purpose |
-| --- | --- | --- |
-| `--project` | `-p` | Project filter. Legacy `--tenant` works. |
-| `--status` | `-s` | Status filter. |
-| `--approval` | `-a` | Approval-required tasks. |
-| `--limit` | `-l` | Max cards/items. |
-| `--query` | `-q` | Search title, description, or task id. |
-| `--assignee` | `-u` | Assignee/profile filter. |
-| `--text` | `-t` | Plain text report. |
-| `--new` | `-n` | New task modal. |
-| `--edit` | `-e` | Editable detail modal. |
-| `--delete` | `-d` | Archive confirmation path. |
-
+| Long option  | Short | Purpose                                  |
+| ------------ | ----- | ---------------------------------------- |
+| `--project`  | `-p`  | Project filter. Legacy `--tenant` works. |
+| `--status`   | `-s`  | Status filter.                           |
+| `--approval` | `-a`  | Approval-required tasks.                 |
+| `--limit`    | `-l`  | Max cards/items.                         |
+| `--query`    | `-q`  | Search title, description, or task id.   |
+| `--assignee` | `-u`  | Assignee/profile filter.                 |
+| `--text`     | `-t`  | Plain text report.                       |
+| `--new`      | `-n`  | New task modal.                          |
+| `--edit`     | `-e`  | Editable detail modal.                   |
+| `--delete`   | `-d`  | Archive confirmation path.               |

@@ -697,3 +697,37 @@ def test_manual_move_to_todo_survives_board_render(tmp_path, monkeypatch):
     )
     assert "*Todo* `1`" in rendered
     assert "*Ready* `0`" in rendered
+
+
+def test_review_status_renders_as_column(tmp_path, monkeypatch):
+    """v0.15+ ``review`` tasks must appear in their own board column."""
+    monkeypatch.setenv("HERMES_KANBAN_DB", str(tmp_path / "kanban.db"))
+    kb.init_db()
+    with kb.connect() as conn:
+        tid = kb.create_task(conn, title="Awaiting review card", tenant="rev")
+        with kb.write_txn(conn):
+            conn.execute("UPDATE tasks SET status = 'review' WHERE id = ?", (tid,))
+
+    text = build_board_text(BoardFilters(tenant="rev"))
+    assert "*Review*" in text
+    assert "Awaiting review card" in text
+
+    summary = build_board_text(BoardFilters(tenant="rev"), detail="summary")
+    assert "Review" in summary
+
+
+def test_noncolumn_status_surfaced_as_other(tmp_path, monkeypatch):
+    """Tasks in column-less statuses (e.g. ``scheduled``) are surfaced, not dropped."""
+    monkeypatch.setenv("HERMES_KANBAN_DB", str(tmp_path / "kanban.db"))
+    kb.init_db()
+    with kb.connect() as conn:
+        tid = kb.create_task(conn, title="Scheduled card", tenant="sch")
+        with kb.write_txn(conn):
+            conn.execute("UPDATE tasks SET status = 'scheduled' WHERE id = ?", (tid,))
+
+    text = build_board_text(BoardFilters(tenant="sch"))
+    assert "other: 1" in text
+
+    fallback, blocks = build_board_blocks(BoardFilters(tenant="sch"))
+    context_block = next(block for block in blocks if block.get("type") == "context")
+    assert "other 1" in context_block["elements"][0]["text"]

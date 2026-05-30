@@ -27,6 +27,7 @@ This skill is a setup guide. It does not grant Slack workspace permissions, crea
 - Prefer deterministic steps: install script, manifest export, manifest validate, manifest update, config check, gateway restart, smoke test.
 - Treat Slack App Configuration Token generation, workspace install or reinstall approval, app-level token generation, bot token placement, and channel invitation as guided user actions.
 - Keep `/board` command behavior predictable: explicit flags are deterministic; natural-language requests are accepted only when the intent is clear.
+- Re-run the installer after every `hermes update`. Updates revert the in-place `slack.py` patch (Hermes stashes local changes before pulling and does not reliably restore them), so `/board` stops responding until you re-install. The overlay file survives but goes stale.
 
 ## Workflow
 
@@ -41,6 +42,8 @@ hermes profile list
 ```
 
 Confirm the Hermes checkout path. The remote installer can auto-detect common paths, but custom deployments should pass `--hermes-root`.
+
+The installer supports Hermes Agent 0.12.0 through 0.15.x. It patches `slack.py` by string markers and runs `py_compile` + `pytest` gates, so an unsupported or shifted version fails loudly rather than producing a broken gateway. Run the installer with the Hermes virtualenv (the installer auto-selects `<hermes-root>/venv/bin/python` when present) so the bundled test gate has its dependencies.
 
 ### 2. Install `/board`
 
@@ -126,6 +129,17 @@ Read `references/troubleshooting.md` when:
 - Slack rejects blocks
 - text mode works but Block Kit does not
 
+### 8. After a Hermes Update
+
+`hermes update` reverts the in-place `slack.py` patch, so `/board` stops responding after every update. Re-install, then restart the gateway:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dandacompany/hermes-slack-board/main/scripts/install-remote.sh | bash
+systemctl --user restart hermes-gateway.service
+```
+
+Re-install is idempotent. Do not rely on `git stash apply` to restore the patch — the untracked overlay file is left orphaned and possibly stale, and the patch may not re-apply cleanly across a large update. See `references/troubleshooting.md`.
+
 ## Validation
 
 Validate this skill package:
@@ -133,4 +147,3 @@ Validate this skill package:
 ```bash
 python3 skills/hermes-slack-board-setup/scripts/validate_setup.py skills/hermes-slack-board-setup
 ```
-

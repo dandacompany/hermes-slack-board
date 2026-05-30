@@ -8,6 +8,7 @@ small control-plane actions from Slack.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shlex
 import time
@@ -16,8 +17,10 @@ from typing import Any
 
 from hermes_cli import kanban_db as kb
 
+logger = logging.getLogger(__name__)
 
-STATUS_ORDER = ("triage", "todo", "ready", "running", "blocked", "done")
+
+STATUS_ORDER = ("triage", "todo", "ready", "running", "blocked", "review", "done")
 MANUAL_MOVE_STATUSES = ("triage", "todo", "ready", "blocked", "done")
 CREATE_TASK_STATUSES = ("triage", "todo", "ready")
 EDITABLE_DETAIL_STATUSES = ("todo", "ready", "running", "blocked")
@@ -27,6 +30,7 @@ STATUS_LABELS = {
     "ready": "Ready",
     "running": "In Progress",
     "blocked": "Blocked",
+    "review": "Review",
     "done": "Done",
 }
 SYSTEM_DEFAULT_RESULTS = {
@@ -1047,6 +1051,21 @@ def _load_tasks(filters: BoardFilters) -> list[kb.Task]:
     return tasks
 
 
+def _noncolumn_count(grouped: dict[str, list[kb.Task]]) -> int:
+    """Count tasks parked in statuses that have no board column.
+
+    v0.15+ Hermes adds statuses (e.g. ``scheduled``) the board does not render
+    as columns. They are surfaced as an ``other`` count so they are never
+    silently dropped from view. ``archived`` is excluded — it has dedicated
+    handling via ``include_archived``.
+    """
+    return sum(
+        len(items)
+        for status, items in grouped.items()
+        if status not in STATUS_ORDER and status != "archived"
+    )
+
+
 def build_board_blocks(filters: BoardFilters) -> tuple[str, list[dict[str, Any]]]:
     """Return `(fallback_text, blocks)` for a Slack Kanban board view."""
     board = _current_board(filters)
@@ -1076,6 +1095,13 @@ def build_board_blocks(filters: BoardFilters) -> tuple[str, list[dict[str, Any]]
         filter_bits.append("approval required")
     if filters.include_archived:
         filter_bits.append(f"archived {archived_count}")
+    other_count = _noncolumn_count(grouped)
+    if other_count:
+        filter_bits.append(f"other {other_count}")
+        logger.info(
+            "[Slack board] %d task(s) in column-less status(es) surfaced as 'other'",
+            other_count,
+        )
 
     blocks: list[dict[str, Any]] = [
         {
@@ -1277,6 +1303,9 @@ def build_board_text(filters: BoardFilters, *, detail: str = "list") -> str:
         filters_line.append(f"query: {filters.query}")
     if filters.approval_only:
         filters_line.append("approval: required")
+    other_count = _noncolumn_count(grouped)
+    if other_count:
+        filters_line.append(f"other: {other_count}")
 
     lines = [
         "*Hermes Kanban Board*",

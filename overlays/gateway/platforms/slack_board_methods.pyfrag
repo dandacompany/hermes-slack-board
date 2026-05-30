@@ -1364,5 +1364,3 @@
                     )
             except Exception:
                 pass
-
-    async def _handle_slash_confirm_action(self, ack, body, action) -> None:

@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-SUPPORTED_VERSIONS = ("0.12.0", "0.13.0")
+SUPPORTED_VERSIONS = ("0.12.0", "0.13.0", "0.14.0", "0.15.0", "0.15.1")
 
 
 def detect_hermes_version(hermes_root: Path) -> str | None:
@@ -96,6 +96,34 @@ def copy_overlay(src_rel: str, dst_rel: str, hermes_root: Path) -> None:
     print(f"copied {dst_rel}")
 
 
+def _assert_single_bodied_confirm(text: str) -> None:
+    """Guard against the methods splice duplicating the slash-confirm handler.
+
+    A stray trailing anchor in ``slack_board_methods.pyfrag`` can leave a
+    body-less ``async def _handle_slash_confirm_action`` signature, which only
+    surfaces later as an opaque ``IndentationError`` at ``py_compile`` time.
+    Fail early and loudly with an actionable message instead of writing a
+    silently broken ``slack.py``.
+    """
+    needle = "async def _handle_slash_confirm_action("
+    count = text.count(needle)
+    if count != 1:
+        raise RuntimeError(
+            f"patched slack.py has {count} _handle_slash_confirm_action definitions "
+            "(expected exactly 1); the methods splice duplicated the handler — check "
+            "slack_board_methods.pyfrag for a stray trailing signature."
+        )
+    lines = text.splitlines()
+    idx = next(i for i, line in enumerate(lines) if needle in line)
+    sig_indent = len(lines[idx]) - len(lines[idx].lstrip())
+    next_code = next((line for line in lines[idx + 1:] if line.strip()), "")
+    if len(next_code) - len(next_code.lstrip()) <= sig_indent:
+        raise RuntimeError(
+            "patched slack.py has a body-less _handle_slash_confirm_action signature; "
+            "the methods splice left the handler without a body."
+        )
+
+
 def patch_slack_py(slack_py: Path) -> list[str]:
     warnings: list[str] = []
     text = slack_py.read_text()
@@ -142,6 +170,7 @@ def patch_slack_py(slack_py: Path) -> list[str]:
     else:
         text = text.replace(methods_end, methods + "\n\n" + methods_end, 1)
 
+    _assert_single_bodied_confirm(text)
     slack_py.write_text(text)
     return warnings
 
