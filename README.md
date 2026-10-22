@@ -2,7 +2,47 @@
 
 Experimental Slack Block Kit UI for the Hermes Agent Kanban board.
 
-This package adds a native Slack `/board` command that renders Hermes Kanban tasks as interactive Slack cards. It is a fast-public release extracted from a working Hermes Agent v0.12.0 installation, with an installer that backs up the target checkout before applying changes.
+This package adds a native Slack `/board` command that renders Hermes Kanban tasks as interactive Slack cards. **Hermes v0.22.4 uses the native local plugin in `slack_board/`, without core patches.** The original overlay installer remains available for legacy Hermes versions only.
+
+## Native plugin: Hermes v0.22.4
+
+From this repository, using the default profile:
+
+```bash
+python3 scripts/install_plugin.py --home "$HOME/.hermes"
+hermes plugins enable slack-board
+hermes plugins doctor slack-board --ci
+# Confirm the enable command reports live callback activation.
+# Restart via your normal service procedure if the gateway did not reload.
+```
+
+For a different profile, pass its **exact home** to `--home` and use the same
+`HERMES_HOME` for the enable/doctor commands. The installer refuses an existing
+plugin destination; it does not change config, install dependencies, restart the
+gateway, or modify Slack. Do not use the legacy `install.sh` on v0.22.4.
+
+Requires the already-configured Slack platform, Socket Mode/interactivity, and an
+existing `/board` Slack slash command. This plugin requires the default
+`plugins.isolation: in_process` mode; native SDK callbacks cannot run in `host`
+isolation. It uses Hermes' profile-bound Slack interactive authorization on
+**every slash, button/select action, and view submission**, with fail-closed
+handling if that API is unavailable or raises. Kanban storage remains Hermes'
+shared cross-profile coordination database by design, not a separate plugin DB.
+
+Run the new suite through the PM-managed launcher (no pip changes):
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 hermes --run-module unittest discover -s tests -p 'test_native*.py' -v
+hermes plugins doctor ./slack_board --ci
+```
+
+Move → Done uses the native completion lifecycle, not a direct status update:
+parent dependencies and live-worker ownership remain enforced, and successful
+completion retains native run/event auditing. Manual Todo is stored as a sticky
+Blocked hold until explicitly released to Ready.
+
+See [native installation, design, and verification](docs/native-plugin.md).
+
 
 ## What It Adds
 
@@ -16,7 +56,10 @@ This package adds a native Slack `/board` command that renders Hermes Kanban tas
 
 ## Compatibility
 
-Tested against:
+The following compatibility notes describe the **legacy overlay path**. On v0.22.4,
+use the native plugin above instead of patching the Slack adapter.
+
+Legacy versions tested against:
 
 - Hermes Agent v0.12.0 (2026.4.30) and v0.13.0 (2026.5.7).
 - Python 3.11.
@@ -26,13 +69,13 @@ Tested against:
 
 v0.13.0 ships a baseline `gateway/platforms/slack_kanban_board.py` upstream (~924 lines), but it does not yet wire `/board` as a Slack slash command and does not expose extension hooks for Slack Bolt action/view handlers. This package replaces the upstream module with an extended version (~1,927 lines) that adds: short-option and natural-language parsing, status pagination, approval filter and approve/request-changes flow, task creation modal with dependencies and project options, edit modal, dependency/project selectors, debug detail blocks, and richer help/text output. The original upstream file is backed up under `~/.hermes/backups/hermes-slack-board-*` before replacement.
 
-This is not yet a pure Hermes plugin because Hermes plugins can register general slash commands, but the current public plugin surface does not expose Slack Bolt Block Kit action/view registration hooks. The installer patches the Slack adapter directly and creates a backup.
+The legacy overlay was not a pure plugin: those older releases lacked the required native Slack registration hooks. Its installer patches the Slack adapter directly and creates a backup. v0.22.4 now has those hooks and uses `slack_board/` instead.
 
 ### Roadmap
 
-Once the upstream extension hooks API ([NousResearch/hermes-agent#20936](https://github.com/NousResearch/hermes-agent/pull/20936)) is merged, this project will be re-released as a pure Hermes plugin (no core patches), and the installer will become a thin compatibility shim.
+The v0.22.4 local native plugin is implemented. Future work can reduce dependence on internal Kanban SQL/helpers as upstream exposes higher-level mutation APIs.
 
-## Install
+## Legacy Overlay Install (not v0.22.4)
 
 For most users, run the install wizard on the server that runs Hermes:
 

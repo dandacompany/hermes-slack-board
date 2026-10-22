@@ -1,0 +1,6 @@
+name: slack-board
+version: 0.2.0
+kind: standalone
+description: Native Slack Block Kit control plane for Hermes Kanban boards.
+author: hermes-slack-board contributors
+requires_hermes: ">=0.22.4,<0.23"
